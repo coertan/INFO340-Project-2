@@ -1,3 +1,8 @@
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.Date;
 
 import javax.swing.JOptionPane;
@@ -5,129 +10,440 @@ import javax.swing.JOptionPane;
 
 public class DatabaseAccess {
 	
+	private final static String url = "jdbc:sqlserver://is-fleming.ischool.uw.edu";
+    private final static String user = "store_1";
+    private final static String pass = "info340#jc";
+    
 	public static Order [] GetPendingOrders()
 	{
-		// TODO:  Query the database and retrieve the information.
-		// resultset.findcolumn(string col)
+		// TODO:  Add BillingAddress and BillingInfo at bottom of method
 		
-		// DUMMY DATA!
-		Order o = new Order();
-		o.OrderID = 1;
-		o.Customer = new Customer();
-		o.Customer.CustomerID = 1;
-		o.Customer.Name = "Kevin";
-		o.Customer.Email = "kevin@pathology.washington.edu";
-		o.OrderDate = new Date();
-		o.Status = "ORDERED";
-		o.TotalCost = 520.20;
-		o.BillingAddress = "1959 NE Pacific St, Seattle, WA 98195";
-		o.BillingInfo	 = "PO 12345";
-		o.ShippingAddress= "1959 NE Pacific St, Seattle, WA 98195";
-		return new Order [] { o };
+		
+		
+		try{
+		   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+		   Connection conn = DriverManager.getConnection(url, user, pass);
+	       conn.setCatalog("store_1");
+	       Statement stmt = conn.createStatement();
+	       ResultSet rs = stmt.executeQuery("SELECT COUNT(*) AS RowTotal FROM OrderInfo WHERE DateShipped IS Null");
+	       int rowcount = 0;
+	       if(rs.next()){
+	    	   rowcount = rs.getInt("RowTotal");
+	       }
+	       
+	       rs = stmt.executeQuery("SELECT * FROM OrderInfo WHERE DateShipped IS NULL");
+	      
+    	   System.out.println(rowcount);
+	       Order[] orderList = new Order[rowcount];
+	       int count = 0;
+	       while (rs.next()) {
+	    	   System.out.println("row="+rs.getRow());
+	    	   
+	    	   Order o = new Order();
+	    	   o.Customer = new Customer();
+	    	   o.OrderID = rs.getInt("OrderID");
+	    	   Statement innerStmt = conn.createStatement();
+	    	   ResultSet rsInner = innerStmt.executeQuery("SELECT * FROM Customer WHERE CustomerID = " + rs.getString("CustomerID"));
+	    	   rsInner.next();
+	    	   System.out.println(rsInner.getFetchSize());
+
+	    	   
+	    	   o.Customer.Name = rsInner.getString("FirstName") + " " + rsInner.getString("LastName");
+	    	   o.Customer.Email = rsInner.getString("EmailAddress");
+	    	   o.Customer.CustomerID = rs.getInt("CustomerID");
+	    	   o.OrderDate = rs.getDate("DateOrdered");
+	    	   o.Status = rs.getString("OrderStatus");
+	    	   //now build the lineitems
+	    	   int innerRowCount = 0;
+	    	   rsInner = innerStmt.executeQuery("SELECT COUNT(*) AS RowTotal FROM LineItem WHERE OrderID = " + rs.getString("OrderID"));
+	    	   if(rsInner.next()){
+	    		   innerRowCount=rsInner.getInt("RowTotal");
+	    	   }
+	    	   rsInner = innerStmt.executeQuery("SELECT * FROM LineItem WHERE OrderID = " + rs.getString("OrderID"));
+	    	   double total = 0;
+	    	   
+	    	   o.LineItems = new LineItem[innerRowCount];
+	    	   innerRowCount = 0;
+	    	   while(rsInner.next()){
+
+	    		   LineItem item = new LineItem();
+	    		   item.Order = o;
+	    		   item.Quantity = rsInner.getInt("QuantityOrdered");
+	    		   item.PricePaid = rsInner.getDouble("ProductSubtotal");
+	    		   total = item.PricePaid + total;
+	    		   item.Product = new Product();
+	    		   Statement productStmt = conn.createStatement();
+	    		   ResultSet rsProduct = productStmt.executeQuery("SELECT * FROM Product WHERE ProductID = " + rsInner.getString("ProductID"));
+	    		   rsProduct.next();
+	    		   item.Product.Description = rsProduct.getString("Description");
+	    		   item.Product.ProductID = rsProduct.getInt("ProductID");
+	    		   item.Product.Name = rsProduct.getString("ProductName");
+	    		   item.Product.Price = rsProduct.getDouble("SellPrice");
+	    		   item.Product.InStock = rsProduct.getInt("Qty_In_Stock");
+	    		   item.Product.Description = "Temppp";
+	    		   //NEED TO ADD DESCRIPTION STUFF HERE
+	    		   o.LineItems[innerRowCount] = item;
+	    		   innerRowCount++;
+	    	   }
+	    	   o.TotalCost = total;
+	    	   rsInner = innerStmt.executeQuery("SELECT * FROM Address WHERE AddressID = " + rs.getString("ShippingAddressID"));
+	    	   rsInner.next();
+	    	   if(rsInner.getString("LineTwo") == null){
+		    	   o.ShippingAddress = rsInner.getString("LineOne")  + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+	    	   }else{
+		    	   o.ShippingAddress = rsInner.getString("LineOne") + " " + rsInner.getString("LineTwo") + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+	    	   }
+	    	   rsInner = innerStmt.executeQuery("SELECT * FROM Address WHERE AddressID = "+  rs.getString("BillingAddressID"));
+	    	   rsInner.next();	   
+	    	   if(rsInner.getString("LineTwo") == null){
+		    	   o.BillingAddress = rsInner.getString("LineOne")  + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+	    	   }else{
+		    	   o.BillingAddress = rsInner.getString("LineOne") + " " + rsInner.getString("LineTwo") + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+	    	   }
+	    	   orderList[count] = o;
+	    	   count++;
+	       }
+	       return orderList;
+
+		}
+		catch(ClassNotFoundException ex) {
+		   System.out.println("Error: unable to load driver class!");
+		   System.exit(1);
+		} catch (SQLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return new Order[1];
 	}
+	
 	
 	public static Product[] GetProducts()
 	{
-		// TODO:  Retrieve all the information about the products.
+		// TODO:  Add customer reviews/relevance to products.
 		
-		// DUMMY VALUES
-		Product p = new Product();
-		p.Description = "A great monitor";
-		p.Name = "Monitor, 19 in";
-		p.InStock = 10;
-		p.Price = 196;
-		p.ProductID = 1;
-		return new Product [] { p } ;
+		
+		
+		try {
+			   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+			   
+		       Connection conn = DriverManager.getConnection(url, user, pass);
+		       conn.setCatalog("store_1");
+		       Statement stmt = conn.createStatement();
+		       int count = 0;
+		       ResultSet rs = stmt.executeQuery("SELECT COUNT(*) AS Total FROM Product");
+		       if(rs.next()){
+		    	   count= rs.getInt("Total");
+		       }
+		       Product[] products = new Product[count];
+		       count = 0;
+		       rs = stmt.executeQuery("SELECT * FROM Product");
+		       while (rs.next()) {
+		    	  
+		    	   Product individualProduct = new Product();
+		    	   individualProduct.ProductID = rs.getInt("ProductID");
+		    	   individualProduct.Description = rs.getString("Description");
+		    	   individualProduct.Name = rs.getString("ProductName");
+		    	   individualProduct.Price = rs.getDouble("SellPrice");
+		    	   individualProduct.InStock = rs.getInt("Qty_In_Stock");
+		    	   //NEED TO ADD RELEVANCE/COMMENTS HERE
+		    	   
+		    	   products[count] = individualProduct;
+		    	   count++;
+		       }
+		       return products;
+
+			}
+			catch(ClassNotFoundException ex) {
+			   System.out.println("Error: unable to load driver class!");
+			   return null;
+			   //System.exit(1);
+			} catch (SQLException e) {
+				System.out.println("SQL ERROR!");
+				return null;
+				//e.printStackTrace();
+			}
+		
+	
 	}
 
 	public static Order GetOrderDetails(int OrderID)
 	{
 		// TODO:  Query the database to get the flight information as well as all 
 		// the reservations.
-		
-		// DUMMY DATA FOLLOWS
-		Order o = new Order();
-		o.OrderID = 1;
-		o.Customer = new Customer();
-		o.Customer.CustomerID = 1;
-		o.Customer.Name = "Kevin";
-		o.Customer.Email = "kevin@pathology.washington.edu";
-		o.OrderDate = new Date();
-		o.Status = "ORDERED";
-		o.TotalCost = 520.20;
-		o.BillingAddress = "1959 NE Pacific St, Seattle, WA 98195";
-		o.BillingInfo	 = "PO 12345";
-		o.ShippingAddress= "1959 NE Pacific St, Seattle, WA 98195";
+		System.out.println("OrderID="+OrderID);
+		try {
+			   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+		       Connection conn = DriverManager.getConnection(url, user, pass);
+		       conn.setCatalog("store_1");
+		       Statement stmt = conn.createStatement();
+		       ResultSet rs = stmt.executeQuery("SELECT COUNT(*) as ErrorCheck FROM OrderInfo WHERE OrderID = " + OrderID);
+		       rs.next();
+		       
+		       //neither of these should ever trigger, but just in case...
+		       if(rs.getInt("ErrorCheck") > 1){
+		    	   System.out.println("Error!  More than one order with that name!");
+		    	   System.exit(1);
+		       }else if(rs.getInt("ErrorCheck") == 0){
+		    	   System.out.println("Error!  No such item!");
+		    	   System.exit(1);
+		       }else{
+		    	   rs = stmt.executeQuery("SELECT * FROM OrderInfo WHERE OrderID = "+OrderID);
+			       rs.next();
+			       Order o = new Order();
+			       o.Customer = new Customer();
+		    	   Statement innerStmt = conn.createStatement();
+		    	   ResultSet rsInner = innerStmt.executeQuery("SELECT * FROM Customer WHERE CustomerID = " + rs.getString("CustomerID"));
+		    	   rsInner.next();
+		    	   System.out.println(rsInner.getFetchSize());
+		    	   
+		    	   o.Customer.Name = rsInner.getString("FirstName") + " " + rsInner.getString("LastName");
+		    	   o.Customer.Email = rsInner.getString("EmailAddress");
+		    	   o.Customer.CustomerID = rs.getInt("CustomerID");
+		    	   o.OrderDate = rs.getDate("DateOrdered");
+		    	   o.Status = rs.getString("OrderStatus");
+		    	   //now build the lineitems
+		    	   int innerRowCount = 0;
+		    	   rsInner = innerStmt.executeQuery("SELECT COUNT(*) AS RowTotal FROM LineItem WHERE OrderID = " + rs.getString("OrderID"));
+		    	   if(rsInner.next()){
+		    		   innerRowCount=rsInner.getInt("RowTotal");
+		    	   }
+		    	   rsInner = innerStmt.executeQuery("SELECT * FROM LineItem WHERE OrderID = " + rs.getString("OrderID"));
+		    	   double total = 0;
+		    	   
+		    	   o.LineItems = new LineItem[innerRowCount];
+		    	   innerRowCount = 0;
+		    	   while(rsInner.next()){
 
-		LineItem li = new LineItem();
-		li.Order = o;
-		li.PricePaid = 540.00;
-		li.Product = new Product();
-		li.Product.Description = "A great product.";
-		li.Product.Name = "Computer Mouse";
-		li.Quantity = 2;
-		
-		o.LineItems = new LineItem[] {li};
-		return o;
+		    		   LineItem item = new LineItem();
+		    		   item.Order = o;
+		    		   item.Quantity = rsInner.getInt("QuantityOrdered");
+		    		   item.PricePaid = rsInner.getDouble("ProductSubtotal");
+		    		   total = item.PricePaid + total;
+		    		   item.Product = new Product();
+		    		   Statement productStmt = conn.createStatement();
+		    		   ResultSet rsProduct = productStmt.executeQuery("SELECT * FROM Product WHERE ProductID = " + rsInner.getString("ProductID"));
+		    		   rsProduct.next();
+		    		   item.Product.Description = rsProduct.getString("Description");
+		    		   item.Product.ProductID = rsProduct.getInt("ProductID");
+		    		   item.Product.Name = rsProduct.getString("ProductName");
+		    		   item.Product.Price = rsProduct.getDouble("SellPrice");
+		    		   item.Product.InStock = rsProduct.getInt("Qty_In_Stock");
+		    		   item.Product.Description = "Temppp";
+		    		   //NEED TO ADD DESCRIPTION STUFF HERE
+		    		   o.LineItems[innerRowCount] = item;
+		    		   innerRowCount++;
+		    	   }
+		    	   o.TotalCost = total;
+		    	   rsInner = innerStmt.executeQuery("SELECT * FROM Address WHERE AddressID = " + rs.getString("ShippingAddressID"));
+		    	   rsInner.next();
+		    	   if(rsInner.getString("LineTwo") == null){
+			    	   o.ShippingAddress = rsInner.getString("LineOne")  + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+		    	   }else{
+			    	   o.ShippingAddress = rsInner.getString("LineOne") + " " + rsInner.getString("LineTwo") + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+		    	   }
+		    	   rsInner = innerStmt.executeQuery("SELECT * FROM Address WHERE AddressID = "+  rs.getString("BillingAddressID"));
+		    	   rsInner.next();	   
+		    	   if(rsInner.getString("LineTwo") == null){
+			    	   o.BillingAddress = rsInner.getString("LineOne")  + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+		    	   }else{
+			    	   o.BillingAddress = rsInner.getString("LineOne") + " " + rsInner.getString("LineTwo") + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+		    	   }
+		    	   //need to add address stuff here - billingaddress, shippingaddress, billin
+		    	   
+		    	   
+		    	   return o;
+		       }
+		       
+		       
+
+			}
+			catch(ClassNotFoundException ex) {
+			   System.out.println("Error: unable to load driver class!");
+			   System.exit(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		return new Order();
+	
 	}
 
 	public static Product GetProductDetails (int ProductID)
 	{
-		Product p = new Product();
-		p.Description = "A great monitor";
-		p.Name = "Monitor, 19 in";
-		p.InStock = 10;
-		p.Price = 196;
-		p.ProductID = ProductID;
-		p.UserComments = new String [] { "I bought this product last year and it's still the best monitor I've had.", "After 6 months the color started going out, not sure if it was just mine or all of them" };
 		
-		return p;
-		
+		try {
+			   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+		       Connection conn = DriverManager.getConnection(url, user, pass);
+		       conn.setCatalog("store_1");
+		       Statement stmt = conn.createStatement();
+		       ResultSet rs = stmt.executeQuery("SELECT * from Product WHERE ProductID = "+ProductID);
+		       Product p = new Product();
+		       if (rs.next()) {  //Should return 1 or 0 products - either the ID exists or it does not - add error handling
+		    	   p.ProductID = rs.getInt("ProductID");
+		    	   p.Description = rs.getString("Description");
+		    	   p.Name = rs.getString("ProductName");
+		    	   p.Price = rs.getDouble("SellPrice");
+		    	   
+		    	   //NEED TO ADD RELEVANCE/COMMENTS HERE
+		       }
+		       return p;
+
+			}
+			catch(ClassNotFoundException ex) {
+			   System.out.println("Error: unable to load driver class!");
+			   System.exit(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		return new Product();
 	}
 	
-	public static Customer [] GetCustomers ()
+	public static Customer [] GetCustomers () //Done!  I think
 	{
-		// TODO:  Query the database to retrieve a list of customers.
 		
-		// DUMMY VALUES FOLLOW
-		Customer c1 = new Customer();
-		c1.CustomerID = 1;
-		c1.Email = "k@u";
-		c1.Name = "Kevin Fleming";
-		
-		Customer c2 = new Customer();
-		c2.CustomerID = 2;
-		c2.Email = "k@u";
-		c2.Name = "Niki Cassaro";
+		try {
+			   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+		       Connection conn = DriverManager.getConnection(url, user, pass);
+		       conn.setCatalog("store_1");
+		       Statement stmt = conn.createStatement();
+		       ResultSet rs = stmt.executeQuery("SELECT * from Customer");
+		       Customer[] customers = new Customer[10];
+		       int count = 0;
+		       while (rs.next()) {
+		    	   if(count > (customers.length-1)){
+		    		   Customer[] temp = new Customer[customers.length*2];
+		    		   for(int i = 0; i < customers.length; i++){
+		    			   temp[i] = customers[i];
+		    		   }
+		    		   customers = temp;
+		    	   }
+		    	   Customer c = new Customer();
+		    	   c.CustomerID = rs.getInt("CustomerID");
+		    	   c.Name = rs.getString("FirstName") + " " + rs.getString("LastName");
+		    	   c.Email = rs.getString("EmailAddress");
+		    	   customers[count] = c;
+		    	   count++;
+		       }
+		       return customers;
 
-		Customer c3 = new Customer();
-		c3.CustomerID = 3;
-		c3.Email = "k@u";
-		c3.Name = "Ava Fleming";
-		
-		return new Customer [] { c1, c2, c3 };
+			}
+			catch(ClassNotFoundException ex) {
+			   System.out.println("Error: unable to load driver class!");
+			   System.exit(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				System.out.println("Error: SQL error!");
+				System.exit(1);
+			}
+		return new Customer[1]; //if errors, return an empty set
 	}
 	
 	public static Order [] GetCustomerOrders (Customer c)
 	{
-		Order o = new Order();
-		o.OrderID = 1;
-		o.Customer = new Customer();
-		o.Customer.CustomerID = 1;
-		o.Customer.Name = "Kevin";
-		o.Customer.Email = "kevin@pathology.washington.edu";
-		o.OrderDate = new Date();
-		o.Status = "ORDERED";
-		o.TotalCost = 520.20;
-		o.BillingAddress = "1959 NE Pacific St, Seattle, WA 98195";
-		o.BillingInfo	 = "PO 12345";
-		o.ShippingAddress= "1959 NE Pacific St, Seattle, WA 98195";
+		
+		
+		
+		
+		try{
+		   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+		   Connection conn = DriverManager.getConnection(url, user, pass);
+	       conn.setCatalog("store_1");
+	       Statement stmt = conn.createStatement();
+	       ResultSet rs = stmt.executeQuery("SELECT COUNT(*) AS RowTotal FROM OrderInfo WHERE CustomerID = " + c.CustomerID);
+	       int rowcount = 0;
+	       if(rs.next()){
+	    	   rowcount = rs.getInt("RowTotal");
+	       }
+	       
+	       rs = stmt.executeQuery("SELECT * FROM OrderInfo WHERE CustomerID = " + c.CustomerID);
+	      
+    	   System.out.println(rowcount);
+	       Order[] orderList = new Order[rowcount];
+	       int count = 0;
+	       while (rs.next()) {
+	    	   System.out.println("row="+rs.getRow());
+	    	   
+	    	   Order o = new Order();
+	    	   o.Customer = new Customer();
+	    	   o.OrderID = rs.getInt("OrderID");
+	    	   Statement innerStmt = conn.createStatement();
+	    	   ResultSet rsInner = innerStmt.executeQuery("SELECT * FROM Customer WHERE CustomerID = " + rs.getString("CustomerID"));
+	    	   rsInner.next();
+	    	   System.out.println(rsInner.getFetchSize());
 
-		return new Order [] { o };
+	    	   
+	    	   o.Customer.Name = rsInner.getString("FirstName") + " " + rsInner.getString("LastName");
+	    	   o.Customer.Email = rsInner.getString("EmailAddress");
+	    	   o.Customer.CustomerID = rs.getInt("CustomerID");
+	    	   o.OrderDate = rs.getDate("DateOrdered");
+	    	   o.Status = rs.getString("OrderStatus");
+	    	   //now build the lineitems
+	    	   int innerRowCount = 0;
+	    	   rsInner = innerStmt.executeQuery("SELECT COUNT(*) AS RowTotal FROM LineItem WHERE OrderID = " + rs.getString("OrderID"));
+	    	   if(rsInner.next()){
+	    		   innerRowCount=rsInner.getInt("RowTotal");
+	    	   }
+	    	   rsInner = innerStmt.executeQuery("SELECT * FROM LineItem WHERE OrderID = " + rs.getString("OrderID"));
+	    	   double total = 0;
+	    	   
+	    	   o.LineItems = new LineItem[innerRowCount];
+	    	   innerRowCount = 0;
+	    	   while(rsInner.next()){
+
+	    		   LineItem item = new LineItem();
+	    		   item.Order = o;
+	    		   item.Quantity = rsInner.getInt("QuantityOrdered");
+	    		   item.PricePaid = rsInner.getDouble("ProductSubtotal");
+	    		   total = item.PricePaid + total;
+	    		   item.Product = new Product();
+	    		   Statement productStmt = conn.createStatement();
+	    		   ResultSet rsProduct = productStmt.executeQuery("SELECT * FROM Product WHERE ProductID = " + rsInner.getString("ProductID"));
+	    		   rsProduct.next();
+	    		   item.Product.Description = rsProduct.getString("Description");
+	    		   item.Product.ProductID = rsProduct.getInt("ProductID");
+	    		   item.Product.Name = rsProduct.getString("ProductName");
+	    		   item.Product.Price = rsProduct.getDouble("SellPrice");
+	    		   item.Product.InStock = rsProduct.getInt("Qty_In_Stock");
+	    		   item.Product.Description = "Temppp";
+	    		   //NEED TO ADD DESCRIPTION STUFF HERE
+	    		   o.LineItems[innerRowCount] = item;
+	    		   innerRowCount++;
+	    	   }
+	    	   o.TotalCost = total;
+	    	   rsInner = innerStmt.executeQuery("SELECT * FROM Address WHERE AddressID = " + rs.getString("ShippingAddressID"));
+	    	   rsInner.next();
+	    	   if(rsInner.getString("LineTwo") == null){
+		    	   o.ShippingAddress = rsInner.getString("LineOne")  + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+	    	   }else{
+		    	   o.ShippingAddress = rsInner.getString("LineOne") + " " + rsInner.getString("LineTwo") + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+	    	   }
+	    	   rsInner = innerStmt.executeQuery("SELECT * FROM Address WHERE AddressID = "+  rs.getString("BillingAddressID"));
+	    	   rsInner.next();	   
+	    	   if(rsInner.getString("LineTwo") == null){
+		    	   o.BillingAddress = rsInner.getString("LineOne")  + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+	    	   }else{
+		    	   o.BillingAddress = rsInner.getString("LineOne") + " " + rsInner.getString("LineTwo") + " " + rsInner.getString("City") + " " + rsInner.getString("State") + " " + rsInner.getString("Zip");
+	    	   }	    	   o.BillingInfo = " ";
+	    	   orderList[count] = o;
+	    	   count++;
+	       }
+	       return orderList;
+
+		}
+		catch(ClassNotFoundException ex) {
+		   System.out.println("Error: unable to load driver class!");
+		   System.exit(1);
+		} catch (SQLException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return new Order[1];
 	}
 	
 	public static Product [] SearchProductReviews(String query)
 	{
+		//TODO: Fix Me
 		// DUMMY VALUES
 		Product p = new Product();
 		p.Description = "A great monitor";
