@@ -1,3 +1,5 @@
+import java.util.HashMap;
+
 
 public class Product {
 	public int ProductID;
@@ -7,7 +9,11 @@ public class Product {
 	public String Description;
 	public String [] UserComments;
 	
+	
+	
 	public double Relavance; // Used for fulltext searching.
+	public HashMap<String, Double>[] wordMaps; 
+	public int[] wordTotals;
 	
 	public String toString(){
 		return Name;

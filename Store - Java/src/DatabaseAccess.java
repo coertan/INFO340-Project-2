@@ -134,7 +134,25 @@ public class DatabaseAccess {
 				individualProduct.Price = rs.getDouble("SellPrice");
 				individualProduct.InStock = rs.getInt("Qty_In_Stock");
 				//NEED TO ADD RELEVANCE/COMMENTS HERE
-
+				//Grab reviews
+				
+				Statement reviewStmt = conn.createStatement();
+				ResultSet rsReviews = reviewStmt.executeQuery("SELECT *, count(*) OVER() AS 'Count' FROM Product");
+				int reviewCount = 0;
+				
+				if(rsReviews.next()){ //if there are reviews
+					reviewCount = rsReviews.getInt("Count");
+					individualProduct.UserComments = new String[reviewCount];
+					//process first review
+					individualProduct.UserComments[0] = rsReviews.getString("Review");
+					int innerCount = 1;
+					while(rsReviews.next()){
+						individualProduct.UserComments[innerCount] = rsReviews.getString("Review");
+						innerCount++;
+					}					
+				}else{
+					individualProduct.UserComments = new String[0];
+				}
 				products[count] = individualProduct;
 				count++;
 			}
@@ -424,83 +442,50 @@ public class DatabaseAccess {
 
 	public static Product [] SearchProductReviews(String query)
 	{
-		try {
-			Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
-			Connection conn = DriverManager.getConnection(url, user, pass);
-			conn.setCatalog("store_1");
-			Statement stmt = conn.createStatement();
-
-			HashMap<String, Integer> tokenMap = new HashMap<String, Integer>();
-
-
-			ResultSet rs = stmt.executeQuery("SELECT * from ProductReview");
-			while (rs.next()) {
-				//for each review, tokenize all the words in the review, and if it isn't already 
-				//in the dictionary, add it.  if it is, update the count
-				String review = rs.getString("Review");
+		
+		Product[] products = GetProducts();
+		HashMap<String, Double> corpus = new HashMap<String, Double>();
+		
+		for(Product product: products){
+			String[] reviews = product.UserComments;
+			int[] wordTotals = new int[reviews.length];
+			HashMap<String, Double>[] wordMaps = new HashMap[reviews.length];
+			for(int i = 0; i < reviews.length; i++){ //for each review, tokenize and process
+				String review = reviews[i];
 				review = review.replace(".", "");
 				review = review.replace("!", "");
 				review = review.replace("'s", "");
 				review = review.toLowerCase();
 				String[] tokens = review.split(" ");
-				for(String token : tokens){
-					if(tokenMap.containsKey(token)){
-						int a = tokenMap.get(token);
-						tokenMap.put(token, a++);
-					}else{
-						tokenMap.put(token, 1);
+				wordTotals[i] = tokens.length;
+				HashMap<String, Double> thisDoc = new HashMap<String, Double>();
+				for(String token : tokens){		 //for each token...			
+					//if we haven't already seen this word for this document, add it
+					if(!thisDoc.containsKey(token)){
+						if(corpus.containsKey(token)){ //if this token has been seen in other documents, just update the count
+							double a = corpus.get(token);
+							corpus.put(token, a++);
+						}else{ //otherwise start the count at 1
+							corpus.put(token, (double) 1);
+						}
+						thisDoc.put(token, (double)1);
+					}else{ //otherwise we've already seen this word in this document, so don't update the corpus again,
+						//just the map for this particular document
+						double a = thisDoc.get(token);
+						thisDoc.put(token, a++);
 					}
-				}
-				//now, generate idf values
-				Iterator it = tokenMap.keySet().iterator();
-				while(it.hasNext()){
-					String token = (String) it.next();
-					double idf = tokenMap.get(token);
-					idf = Math.log10(tokenMap.size() / idf);
-					tokenMap.put(token, a);
-				}
+				}//done processing the individual review
+				wordMaps[i] = thisDoc;
+			}//done processing ALL reviews for the product
+			product.wordMaps = wordMaps;
+			product.wordTotals = wordTotals;			
 
-			}
-
-		}
-		catch(ClassNotFoundException ex) {
-			System.out.println("Error: unable to load driver class!");
-			System.exit(1);
-		} catch (SQLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		//first, generate idf values - create a dictionary and iterate through all product reviews
-		//
-
-		//remove punctuation/etc and convert to lowercase
-		String tempString = query.replace(".", "");
-		tempString = tempString.replace("'s", "");
-		tempString = tempString.toLowerCase();
-
-
-		String[] tokens = tempString.split(" ");
-		HashMap<String, Integer> tokenMap = new HashMap<String, Integer>();
-		for(String token : tokens){
-			if(tokenMap.containsKey(token)){
-				int a = tokenMap.get(token);
-				tokenMap.put(token, a++);
-			}else{
-				tokenMap.put(token, 1);
-			}
-		}
-
-
-		//TODO: Fix Me
-		// DUMMY VALUES
-		Product p = new Product();
-		p.Description = "A great monitor";
-		p.Name = "Monitor, 19 in";
-		p.InStock = 10;
-		p.Price = 196;
-		p.ProductID = 1;
-		p.Relavance = 0.7;
-		return new Product [] { p} ;
+		} //done building the corpus/wordMaps/wordTotals.
+		
+		
+		
+		
+		
 	}
 
 	public static void MakeOrder(Customer c, LineItem [] LineItems)
@@ -581,7 +566,5 @@ public class DatabaseAccess {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-
-
 	}
 }
