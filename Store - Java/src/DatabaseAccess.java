@@ -1,10 +1,10 @@
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.Date;
-
+import java.text.SimpleDateFormat;
 import javax.swing.JOptionPane;
 
 
@@ -15,11 +15,7 @@ public class DatabaseAccess {
     private final static String pass = "info340#jc";
     
 	public static Order [] GetPendingOrders()
-	{
-		// TODO:  Add BillingAddress and BillingInfo at bottom of method
-		
-		
-		
+	{		
 		try{
 		   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
 		   Connection conn = DriverManager.getConnection(url, user, pass);
@@ -33,25 +29,20 @@ public class DatabaseAccess {
 	       
 	       rs = stmt.executeQuery("SELECT * FROM OrderInfo WHERE DateShipped IS NULL");
 	      
-    	   System.out.println(rowcount);
 	       Order[] orderList = new Order[rowcount];
 	       int count = 0;
-	       while (rs.next()) {
-	    	   System.out.println("row="+rs.getRow());
-	    	   
+	       while (rs.next()) {	    	   
 	    	   Order o = new Order();
 	    	   o.Customer = new Customer();
 	    	   o.OrderID = rs.getInt("OrderID");
 	    	   Statement innerStmt = conn.createStatement();
 	    	   ResultSet rsInner = innerStmt.executeQuery("SELECT * FROM Customer WHERE CustomerID = " + rs.getString("CustomerID"));
 	    	   rsInner.next();
-	    	   System.out.println(rsInner.getFetchSize());
-
 	    	   
 	    	   o.Customer.Name = rsInner.getString("FirstName") + " " + rsInner.getString("LastName");
 	    	   o.Customer.Email = rsInner.getString("EmailAddress");
 	    	   o.Customer.CustomerID = rs.getInt("CustomerID");
-	    	   o.OrderDate = rs.getDate("DateOrdered");
+	    	   o.OrderDate = rs.getTimestamp("DateOrdered");
 	    	   o.Status = rs.getString("OrderStatus");
 	    	   //now build the lineitems
 	    	   int innerRowCount = 0;
@@ -69,8 +60,8 @@ public class DatabaseAccess {
 	    		   LineItem item = new LineItem();
 	    		   item.Order = o;
 	    		   item.Quantity = rsInner.getInt("QuantityOrdered");
-	    		   item.PricePaid = rsInner.getDouble("ProductSubtotal");
-	    		   total = item.PricePaid + total;
+	    		   item.PricePaid = rsInner.getDouble("SellPrice");
+	    		   total = (item.PricePaid * item.Quantity) + total;
 	    		   item.Product = new Product();
 	    		   Statement productStmt = conn.createStatement();
 	    		   ResultSet rsProduct = productStmt.executeQuery("SELECT * FROM Product WHERE ProductID = " + rsInner.getString("ProductID"));
@@ -80,12 +71,10 @@ public class DatabaseAccess {
 	    		   item.Product.Name = rsProduct.getString("ProductName");
 	    		   item.Product.Price = rsProduct.getDouble("SellPrice");
 	    		   item.Product.InStock = rsProduct.getInt("Qty_In_Stock");
-	    		   item.Product.Description = "Temppp";
-	    		   //NEED TO ADD DESCRIPTION STUFF HERE
 	    		   o.LineItems[innerRowCount] = item;
 	    		   innerRowCount++;
 	    	   }
-	    	   o.TotalCost = total;
+	    	   o.TotalCost = Math.round(total*100.0)/100.0;
 	    	   rsInner = innerStmt.executeQuery("SELECT * FROM Address WHERE AddressID = " + rs.getString("ShippingAddressID"));
 	    	   rsInner.next();
 	    	   if(rsInner.getString("LineTwo") == null){
@@ -119,11 +108,7 @@ public class DatabaseAccess {
 	
 	public static Product[] GetProducts()
 	{
-		// TODO:  Add customer reviews/relevance to products.
-		
-		
-		
-		try {
+			try {
 			   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
 			   
 		       Connection conn = DriverManager.getConnection(url, user, pass);
@@ -168,9 +153,7 @@ public class DatabaseAccess {
 
 	public static Order GetOrderDetails(int OrderID)
 	{
-		// TODO:  Query the database to get the flight information as well as all 
-		// the reservations.
-		System.out.println("OrderID="+OrderID);
+		
 		try {
 			   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
 		       Connection conn = DriverManager.getConnection(url, user, pass);
@@ -194,12 +177,11 @@ public class DatabaseAccess {
 		    	   Statement innerStmt = conn.createStatement();
 		    	   ResultSet rsInner = innerStmt.executeQuery("SELECT * FROM Customer WHERE CustomerID = " + rs.getString("CustomerID"));
 		    	   rsInner.next();
-		    	   System.out.println(rsInner.getFetchSize());
 		    	   
 		    	   o.Customer.Name = rsInner.getString("FirstName") + " " + rsInner.getString("LastName");
 		    	   o.Customer.Email = rsInner.getString("EmailAddress");
 		    	   o.Customer.CustomerID = rs.getInt("CustomerID");
-		    	   o.OrderDate = rs.getDate("DateOrdered");
+		    	   o.OrderDate = rs.getTimestamp("DateOrdered");
 		    	   o.Status = rs.getString("OrderStatus");
 		    	   //now build the lineitems
 		    	   int innerRowCount = 0;
@@ -217,8 +199,8 @@ public class DatabaseAccess {
 		    		   LineItem item = new LineItem();
 		    		   item.Order = o;
 		    		   item.Quantity = rsInner.getInt("QuantityOrdered");
-		    		   item.PricePaid = rsInner.getDouble("ProductSubtotal");
-		    		   total = item.PricePaid + total;
+		    		   item.PricePaid = rsInner.getDouble("SellPrice");
+		    		   total = (item.PricePaid * item.Quantity) + total;
 		    		   item.Product = new Product();
 		    		   Statement productStmt = conn.createStatement();
 		    		   ResultSet rsProduct = productStmt.executeQuery("SELECT * FROM Product WHERE ProductID = " + rsInner.getString("ProductID"));
@@ -228,12 +210,11 @@ public class DatabaseAccess {
 		    		   item.Product.Name = rsProduct.getString("ProductName");
 		    		   item.Product.Price = rsProduct.getDouble("SellPrice");
 		    		   item.Product.InStock = rsProduct.getInt("Qty_In_Stock");
-		    		   item.Product.Description = "Temppp";
-		    		   //NEED TO ADD DESCRIPTION STUFF HERE
-		    		   o.LineItems[innerRowCount] = item;
+		       		   o.LineItems[innerRowCount] = item;
 		    		   innerRowCount++;
 		    	   }
-		    	   o.TotalCost = total;
+		    	   
+		    	   o.TotalCost = Math.round(total*100.0)/100.0;
 		    	   rsInner = innerStmt.executeQuery("SELECT * FROM Address WHERE AddressID = " + rs.getString("ShippingAddressID"));
 		    	   rsInner.next();
 		    	   if(rsInner.getString("LineTwo") == null){
@@ -358,11 +339,9 @@ public class DatabaseAccess {
 	       
 	       rs = stmt.executeQuery("SELECT * FROM OrderInfo WHERE CustomerID = " + c.CustomerID);
 	      
-    	   System.out.println(rowcount);
 	       Order[] orderList = new Order[rowcount];
 	       int count = 0;
 	       while (rs.next()) {
-	    	   System.out.println("row="+rs.getRow());
 	    	   
 	    	   Order o = new Order();
 	    	   o.Customer = new Customer();
@@ -370,13 +349,12 @@ public class DatabaseAccess {
 	    	   Statement innerStmt = conn.createStatement();
 	    	   ResultSet rsInner = innerStmt.executeQuery("SELECT * FROM Customer WHERE CustomerID = " + rs.getString("CustomerID"));
 	    	   rsInner.next();
-	    	   System.out.println(rsInner.getFetchSize());
 
 	    	   
 	    	   o.Customer.Name = rsInner.getString("FirstName") + " " + rsInner.getString("LastName");
 	    	   o.Customer.Email = rsInner.getString("EmailAddress");
 	    	   o.Customer.CustomerID = rs.getInt("CustomerID");
-	    	   o.OrderDate = rs.getDate("DateOrdered");
+	    	   o.OrderDate = rs.getTimestamp("DateOrdered");
 	    	   o.Status = rs.getString("OrderStatus");
 	    	   //now build the lineitems
 	    	   int innerRowCount = 0;
@@ -394,8 +372,8 @@ public class DatabaseAccess {
 	    		   LineItem item = new LineItem();
 	    		   item.Order = o;
 	    		   item.Quantity = rsInner.getInt("QuantityOrdered");
-	    		   item.PricePaid = rsInner.getDouble("ProductSubtotal");
-	    		   total = item.PricePaid + total;
+	    		   item.PricePaid = rsInner.getDouble("SellPrice");
+	    		   total = (item.PricePaid * item.Quantity) + total;
 	    		   item.Product = new Product();
 	    		   Statement productStmt = conn.createStatement();
 	    		   ResultSet rsProduct = productStmt.executeQuery("SELECT * FROM Product WHERE ProductID = " + rsInner.getString("ProductID"));
@@ -410,7 +388,7 @@ public class DatabaseAccess {
 	    		   o.LineItems[innerRowCount] = item;
 	    		   innerRowCount++;
 	    	   }
-	    	   o.TotalCost = total;
+	    	   o.TotalCost = Math.round(total*100)/100;
 	    	   rsInner = innerStmt.executeQuery("SELECT * FROM Address WHERE AddressID = " + rs.getString("ShippingAddressID"));
 	    	   rsInner.next();
 	    	   if(rsInner.getString("LineTwo") == null){
@@ -457,9 +435,83 @@ public class DatabaseAccess {
 	                    
 	public static void MakeOrder(Customer c, LineItem [] LineItems)
 	{
-		// TODO: Insert data into your database.
-		// Show an error message if you can not make the reservation.
-		
-		JOptionPane.showMessageDialog(null, "Create order for " + c.Name + " for " + Integer.toString(LineItems.length) + " items.");
+		if(LineItems.length == 0){
+			JOptionPane.showMessageDialog(null, "An order must have at least one item!");
+			return;
+		}
+
+		try {
+			   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+		       Connection conn = DriverManager.getConnection(url, user, pass);
+		       conn.setCatalog("store_1");
+		       
+		       
+
+		       conn.setAutoCommit(false);
+		       Statement stmt = conn.createStatement();
+		       Statement updateStmt = conn.createStatement();
+		       ResultSet rs;		       
+		       PreparedStatement orderStmt = conn.prepareStatement("INSERT INTO OrderInfo(DateOrdered, CustomerID, ShippingAddressID, "
+		       		+ "BillingAddressID, OrderStatus) VALUES(?,?,?,?,?)");
+		       
+		       rs = stmt.executeQuery("SELECT  * FROM Address WHERE CustomerID="+c.CustomerID+" AND WasMostRecentShippingAddress=1");
+		       rs.next();
+		       
+		       java.sql.Timestamp orderDate = new java.sql.Timestamp(System.currentTimeMillis());
+		       orderStmt.setTimestamp(1, orderDate);
+		       orderStmt.setInt(2, c.CustomerID);
+		       orderStmt.setInt(3, rs.getInt("AddressID"));
+		       orderStmt.setInt(4, rs.getInt("AddressID"));
+		       orderStmt.setString(5, "Order Received");
+		       orderStmt.execute();
+		       SimpleDateFormat df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+		       rs = stmt.executeQuery("SELECT OrderID FROM OrderInfo WHERE CustomerID="+c.CustomerID+" AND DateOrdered='"+df.format(orderDate)+"'");
+		       rs.next();
+		       int orderID = rs.getInt("OrderID");
+		       
+		       
+		       
+		       for(LineItem item : LineItems){
+			       rs = stmt.executeQuery("SELECT * from Product WITH (ROWLOCK) WHERE ProductID = " + item.Product.ProductID);
+			       rs.next();
+			       if(rs.getInt("Qty_In_Stock") < item.Quantity){
+			    	   JOptionPane.showMessageDialog(null, "Cannot create order, only " + rs.getInt("Qty_In_Stock") + " left in stock of " +item.Product.Name);
+			    	   conn.rollback();
+			    	   return;
+			       }
+			       updateStmt.executeUpdate("UPDATE Product SET Qty_In_Stock="+(rs.getInt("Qty_In_Stock") - item.Quantity) 
+			    		   + " WHERE ProductID="+item.Product.ProductID);	
+			       double profit = (rs.getDouble("SellPrice") - rs.getDouble("PriceFromSeller")) * item.Quantity;
+			       ResultSet rsCheck = updateStmt.executeQuery("SELECT * FROM LineItem WHERE OrderID="+orderID+" AND ProductID="+item.Product.ProductID);
+			       if(rsCheck.next()){
+			    	   updateStmt.executeUpdate("UPDATE LineItem SET QuantityOrdered="+(rsCheck.getInt("QuantityOrdered")
+			    			   +item.Quantity) + ", ProductProfitSubtotal="+(rsCheck.getDouble("ProductProfitSubtotal") + profit) + " WHERE "
+			    			   + " ProductID=" + item.Product.ProductID + " AND OrderID="+orderID);
+			       }else{
+				       PreparedStatement lineStmt = conn.prepareStatement("INSERT INTO LineItem VALUES(?,?,?,?,?);");
+				       
+				       lineStmt.setDouble(1, profit);
+				       lineStmt.setInt(2, orderID);
+				       lineStmt.setInt(3, item.Product.ProductID);
+				       lineStmt.setInt(4, item.Quantity);
+				       lineStmt.setDouble(5, item.PricePaid);
+				       lineStmt.executeUpdate();	
+			       }
+
+			       
+			   }
+		       conn.commit();	
+			   JOptionPane.showMessageDialog(null, "Created order for " + c.Name + " for " + Integer.toString(LineItems.length) + " items.");
+
+		    }
+			catch(ClassNotFoundException ex) {
+			   System.out.println("Error: unable to load driver class!");
+			   System.exit(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+	
+	
 	}
 }
