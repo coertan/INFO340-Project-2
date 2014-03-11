@@ -65,7 +65,8 @@ public class DatabaseAccess {
 					item.Quantity = rsInner.getInt("QuantityOrdered");
 					item.PricePaid = rsInner.getDouble("SellPrice");
 					total = (item.PricePaid * item.Quantity) + total;
-					item.Product = new Product();
+					item.Product = GetProductDetails(rsInner.getInt("ProductID"));
+/*					item.Product = new Product();
 					Statement productStmt = conn.createStatement();
 					ResultSet rsProduct = productStmt.executeQuery("SELECT * FROM Product WHERE ProductID = " + rsInner.getString("ProductID"));
 					rsProduct.next();
@@ -73,7 +74,7 @@ public class DatabaseAccess {
 					item.Product.ProductID = rsProduct.getInt("ProductID");
 					item.Product.Name = rsProduct.getString("ProductName");
 					item.Product.Price = rsProduct.getDouble("SellPrice");
-					item.Product.InStock = rsProduct.getInt("Qty_In_Stock");
+					item.Product.InStock = rsProduct.getInt("Qty_In_Stock");*/
 					o.LineItems[innerRowCount] = item;
 					innerRowCount++;
 				}
@@ -133,21 +134,20 @@ public class DatabaseAccess {
 				individualProduct.Name = rs.getString("ProductName");
 				individualProduct.Price = rs.getDouble("SellPrice");
 				individualProduct.InStock = rs.getInt("Qty_In_Stock");
-				//NEED TO ADD RELEVANCE/COMMENTS HERE
 				//Grab reviews
 				
 				Statement reviewStmt = conn.createStatement();
-				ResultSet rsReviews = reviewStmt.executeQuery("SELECT *, count(*) OVER() AS 'Count' FROM Product");
+				ResultSet rsReviews = reviewStmt.executeQuery("SELECT *, count(*) OVER() AS 'Count' FROM ProductReview WHERE ProductID = " + individualProduct.ProductID);
 				int reviewCount = 0;
 				
 				if(rsReviews.next()){ //if there are reviews
 					reviewCount = rsReviews.getInt("Count");
 					individualProduct.UserComments = new String[reviewCount];
 					//process first review
-					individualProduct.UserComments[0] = rsReviews.getString("Review");
+					individualProduct.UserComments[0] = rsReviews.getString("ReviewText");
 					int innerCount = 1;
 					while(rsReviews.next()){
-						individualProduct.UserComments[innerCount] = rsReviews.getString("Review");
+						individualProduct.UserComments[innerCount] = rsReviews.getString("ReviewText");
 						innerCount++;
 					}					
 				}else{
@@ -222,7 +222,8 @@ public class DatabaseAccess {
 					item.Quantity = rsInner.getInt("QuantityOrdered");
 					item.PricePaid = rsInner.getDouble("SellPrice");
 					total = (item.PricePaid * item.Quantity) + total;
-					item.Product = new Product();
+					item.Product = GetProductDetails(rsInner.getInt("ProductID"));
+/*					item.Product = new Product();
 					Statement productStmt = conn.createStatement();
 					ResultSet rsProduct = productStmt.executeQuery("SELECT * FROM Product WHERE ProductID = " + rsInner.getString("ProductID"));
 					rsProduct.next();
@@ -230,7 +231,7 @@ public class DatabaseAccess {
 					item.Product.ProductID = rsProduct.getInt("ProductID");
 					item.Product.Name = rsProduct.getString("ProductName");
 					item.Product.Price = rsProduct.getDouble("SellPrice");
-					item.Product.InStock = rsProduct.getInt("Qty_In_Stock");
+					item.Product.InStock = rsProduct.getInt("Qty_In_Stock");*/
 					o.LineItems[innerRowCount] = item;
 					innerRowCount++;
 				}
@@ -285,8 +286,24 @@ public class DatabaseAccess {
 				p.Description = rs.getString("Description");
 				p.Name = rs.getString("ProductName");
 				p.Price = rs.getDouble("SellPrice");
-
-				//NEED TO ADD RELEVANCE/COMMENTS HERE
+				p.InStock = rs.getInt("Qty_In_Stock");
+				Statement reviewStmt = conn.createStatement();
+				ResultSet rsReviews = reviewStmt.executeQuery("SELECT *, count(*) OVER() AS 'Count' FROM ProductReview WHERE ProductID = " + p.ProductID);
+				int reviewCount = 0;
+				
+				if(rsReviews.next()){ //if there are reviews
+					reviewCount = rsReviews.getInt("Count");
+					p.UserComments = new String[reviewCount];
+					//process first review
+					p.UserComments[0] = rsReviews.getString("ReviewText");
+					int innerCount = 1;
+					while(rsReviews.next()){
+						p.UserComments[innerCount] = rsReviews.getString("ReviewText");
+						innerCount++;
+					}					
+				}else{
+					p.UserComments = new String[0];
+				}
 			}
 			return p;
 
@@ -440,15 +457,85 @@ public class DatabaseAccess {
 		return new Order[1];
 	}
 
-	public static Product [] SearchProductReviews(String query)
-	{
+	
+	
+	public static Product [] SearchProductReviews(String query){
+		//let's do this using sql server full-text searching
+		try {
+			   Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver");
+		       Connection conn = DriverManager.getConnection(url, user, pass);
+		       conn.setCatalog("store_1");
+		       Statement stmt = conn.createStatement();
+		       
+
+		       ResultSet rs = stmt.executeQuery("SELECT TOP 10 ReviewID, ProductID, KEY_TBL.RANK, count(ReviewID) OVER() as 'Count' " + 
+		    		   "FROM ProductReview JOIN FREETEXTTABLE(ProductReview, ReviewText, '" + query + "') AS KEY_TBL " + 
+		    		   "ON ProductReview.ReviewID = KEY_TBL.[KEY] ORDER BY rank DESC");
+		       int rowCount = 0;
+		       if(rs.next()){
+		    	   rowCount = rs.getInt("Count");
+		    	   System.out.println("Count="+rowCount);
+		       }
+		       Product[] results = new Product[rowCount];
+		       for(int i = 0; i < rowCount; i++){
+		    	   Product temp = GetProductDetails(rs.getInt("ProductID"));
+		    	   if(rs.getInt("RANK") > temp.Relavance){
+		    		   temp.Relavance = rs.getInt("RANK");
+		    	   }
+		    	   results[i] = temp;	
+		    	   if(i < rowCount - 1){
+		    		   rs.next();
+		    	   }
+		       }
+		       return results;
+			}
+			catch(ClassNotFoundException ex) {
+			   System.out.println("Error: unable to load driver class!");
+			   System.exit(1);
+			} catch (SQLException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		return null;
 		
+	}
+
+	
+	
+	
+/*	public static Product [] SearchProductReviews(String query)
+	{	
+		
+		//first, let's tokenize and process the query
+		HashMap<String, Double> queryMap = new HashMap<String, Double>();
+		query = query.replace(".", "");
+		query = query.replace("!", "");
+		query = query.replace("'s", "");
+		query = query.toLowerCase();
+		String[] queryTokens = query.split(" ");
+		int queryTotal = queryTokens.length;
+		for(String token : queryTokens){
+			if(!queryMap.containsKey(token)){
+				queryMap.put(token, (double) 1);
+			}else{
+				queryMap.put(token, queryMap.get(token)+1);
+			}
+		}
+		for(String token : queryMap.keySet()){
+			double tf = queryMap.get(token);
+			tf = tf / queryTotal;
+			queryMap.put(token, tf);
+		}
+		//queryMap now contains TF values for each term in the query
+		
+		//now process the reviews
 		Product[] products = GetProducts();
 		HashMap<String, Double> corpus = new HashMap<String, Double>();
-		
+		int documentTotal = 0;
 		for(Product product: products){
 			String[] reviews = product.UserComments;
 			int[] wordTotals = new int[reviews.length];
+			documentTotal = documentTotal + reviews.length;
 			HashMap<String, Double>[] wordMaps = new HashMap[reviews.length];
 			for(int i = 0; i < reviews.length; i++){ //for each review, tokenize and process
 				String review = reviews[i];
@@ -483,10 +570,39 @@ public class DatabaseAccess {
 		} //done building the corpus/wordMaps/wordTotals.
 		
 		
+		//now let's process the corpus and figure out idf values
+		for(String token : corpus.keySet()){
+			double idf = corpus.get(token);
+			idf = Math.log10(documentTotal/idf);
+			corpus.put(token, idf);		
+		}
 		
+		//now let's turn the tf values in queryMap into tf-idf values
 		
+		for(String token : queryMap.keySet()){
+			if(corpus.containsKey(token)){
+				double tf = queryMap.get(token);
+				double tfidf = tf * corpus.get(token);
+				queryMap.put(token, tfidf);
+			}else{
+				queryMap.put(token, (double)0);
+			}
+		}
 		
-	}
+		//NOW we can process the reviews product-by-product and calculate tf-idf values for each term in each review
+		//we can also calculate the relevance for each product
+		for(Product product: products){
+			for(int i = 0; i < product.wordMaps.length; i++){
+				HashMap<String, Double> wordMap = product.wordMaps[i];
+				int wordTotal = product.wordTotals[i];
+				for(String token : wordMap.keySet()){
+					double tf = wordMap.get(token) / wordTotal;
+					double tfidf = tf * corpus.get(token);
+					wordMap.put(token, tfidf);
+				}
+			}
+		}		
+	}*/
 
 	public static void MakeOrder(Customer c, LineItem [] LineItems)
 	{
@@ -527,7 +643,7 @@ public class DatabaseAccess {
 
 
 			for(LineItem item : LineItems){
-				rs = stmt.executeQuery("SELECT * from Product WITH (ROWLOCK) WHERE ProductID = " + item.Product.ProductID);
+				rs = stmt.executeQuery("SELECT * from Product WITH (ROWLOCK XLOCK) WHERE ProductID = " + item.Product.ProductID);
 				rs.next();
 				if(rs.getInt("Qty_In_Stock") < item.Quantity){
 					JOptionPane.showMessageDialog(null, "Cannot create order, only " + rs.getInt("Qty_In_Stock") + " left in stock of " +item.Product.Name);
